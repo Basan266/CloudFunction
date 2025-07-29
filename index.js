@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const DOWNLOAD_DIR = path.resolve('./downloads');
 
-// Make sure download folder exists
+// ✅ Ensure download folder exists
 if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR);
 }
@@ -16,13 +16,15 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
 app.use(cors());
 app.use(express.json());
 
+// ✅ Health check
 app.get('/', (req, res) => {
   res.send('✅ YouTube Downloader API is running.');
 });
 
+// 🎯 Actual download route
 app.get('/download/:type', async (req, res) => {
-  const url = req.query.url;
-  const type = req.params.type;
+  const { url } = req.query;
+  const { type } = req.params;
 
   if (!url || !['mp3', 'mp4'].includes(type)) {
     return res.status(400).send('❌ Invalid URL or type.');
@@ -30,48 +32,55 @@ app.get('/download/:type', async (req, res) => {
 
   const extension = type === 'mp3' ? 'mp3' : 'mp4';
 
-  // Step 1: Get the title from yt-dlp
-  const titleCommand = `yt-dlp.exe --get-title "${url}"`;
-
-  exec(titleCommand, (titleErr, titleStdout) => {
+  // 🧠 Step 1: Get title
+  const titleCommand = `yt-dlp --get-title "${url}"`;
+  exec(titleCommand, (titleErr, titleStdout, titleStderr) => {
     if (titleErr) {
-      console.error('❌ Failed to fetch title:', titleErr);
+      console.error('❌ Failed to fetch title:', titleStderr || titleErr);
       return res.status(500).send('Failed to get video title.');
     }
 
     const safeTitle = titleStdout.trim().replace(/[^a-zA-Z0-9_\- ]/g, '');
-    const fileName = `${safeTitle}.${extension}`;
+    const fileName = `${safeTitle || 'video'}.${extension}`;
     const outputPath = path.join(DOWNLOAD_DIR, fileName);
 
-    let command = '';
-    if (type === 'mp3') {
-      command = `yt-dlp.exe -f bestaudio --extract-audio --audio-format mp3 -o "${outputPath}" "${url}"`;
-    } else if (type === 'mp4') {
-      command = `yt-dlp.exe -f "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
-    }
+    // 🎵 Step 2: Build yt-dlp command
+    const command =
+      type === 'mp3'
+        ? `yt-dlp -f bestaudio --extract-audio --audio-format mp3 -o "${outputPath}" "${url}"`
+        : `yt-dlp -f "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
 
-    console.log('▶ Running command:', command);
+    console.log('▶ Running yt-dlp command:', command);
 
     exec(command, (err, stdout, stderr) => {
       if (err) {
-        console.error('❌ yt-dlp error:', stderr);
+        console.error('❌ yt-dlp error:', stderr || err);
         return res.status(500).send('Download failed.');
       }
 
-      console.log('✅ yt-dlp success:\n', stdout);
+      console.log('✅ Download success:', stdout);
 
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       const stream = fs.createReadStream(outputPath);
       stream.pipe(res);
 
+      // ✅ Clean up after sending file
       stream.on('end', () => {
-        console.log('🧹 Cleaning up...');
-        fs.unlinkSync(outputPath);
+        console.log('🧹 Cleaning up downloaded file...');
+        fs.unlink(outputPath, (unlinkErr) => {
+          if (unlinkErr) console.error('❌ Failed to delete file:', unlinkErr);
+        });
+      });
+
+      stream.on('error', (streamErr) => {
+        console.error('❌ Stream error:', streamErr);
+        res.status(500).send('Error sending file.');
       });
     });
   });
 });
 
+// ✅ Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
