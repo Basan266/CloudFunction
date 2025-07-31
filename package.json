@@ -1,15 +1,16 @@
 {
   "name": "downloader",
   "type": "module",
-  "main": "server/index.js",
+  "main": "server/index.cjs",
   "scripts": {
-       "start": "node index.js"
+    "start": "node index.cjs"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "fluent-ffmpeg": "^2.1.2",
+    "yt-dlp-exec": "^1.0.2",
     "ytdl-core": "^4.11.5"
   },
   "version": "1.0.0",
