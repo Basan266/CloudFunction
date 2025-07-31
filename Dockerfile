@@ -1,8 +1,9 @@
-# Base image with Python and Node.js
+# Base image with Node.js
 FROM node:18-bullseye
 
-# Install Python
-RUN apt update && apt install -y python3 python3-pip
+# Install Python and ffmpeg
+RUN apt update && \
+    apt install -y python3 python3-pip ffmpeg
 
 # Set working directory
 WORKDIR /app
@@ -14,8 +15,8 @@ RUN npm install
 # Copy rest of the files
 COPY . .
 
-# Expose port 8080
+# Expose port
 EXPOSE 8080
 
-# Start the app
+# Start app
 CMD ["npm", "start"]
