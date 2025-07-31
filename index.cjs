@@ -28,7 +28,9 @@ app.get("/download/:type", async (req, res) => {
   }
 
   const extension = type === "mp3" ? "mp3" : "mp4";
-  const filename = `video-${Date.now()}.${extension}`;
+  const info = await ytdlp(url, { dumpSingleJson: true });
+  const safeTitle = info.title.replace(/[^a-zA-Z0-9_\- ]/g, '').trim();
+  const filename = `${safeTitle || "video"}.${extension}`;
   const filepath = path.join(DOWNLOAD_DIR, filename);
 
   try {
@@ -39,9 +41,12 @@ app.get("/download/:type", async (req, res) => {
       format: type === "mp4" ? "mp4" : "bestaudio",
     });
 
+    res.setHeader("Content-Type", type === "mp3" ? "audio/mpeg" : "video/mp4");
     res.download(filepath, () => {
       fs.unlinkSync(filepath); // Delete after sending
     });
+
+    
   } catch (err) {
     console.error("❌ Download error:", err.message);
     res.status(500).send("❌ Failed to download.");
