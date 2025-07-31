@@ -34,19 +34,28 @@ app.get("/download/:type", async (req, res) => {
   const filepath = path.join(DOWNLOAD_DIR, filename);
 
   try {
-    await ytdlp(url, {
+    // ✅ FIXED: use clean options depending on type
+    const options = {
       output: filepath,
-      extractAudio: type === "mp3",
-      audioFormat: "mp3",
-      format: type === "mp4" ? "mp4" : "bestaudio",
-    });
+    };
+
+    if (type === "mp3") {
+      options.extractAudio = true;
+      options.audioFormat = "mp3";
+      options.format = "bestaudio";
+    }
+
+    if (type === "mp4") {
+      options.format = "mp4";
+    }
+
+    await ytdlp(url, options);
 
     res.setHeader("Content-Type", type === "mp3" ? "audio/mpeg" : "video/mp4");
     res.download(filepath, () => {
       fs.unlinkSync(filepath); // Delete after sending
     });
 
-    
   } catch (err) {
     console.error("❌ Download error:", err.message);
     res.status(500).send("❌ Failed to download.");
