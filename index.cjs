@@ -19,9 +19,35 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-// ✅ CORS FIX
+/* ===========================
+   ✅ OPTIONAL COOKIES FIX
+   (for "Sign in to confirm you're not a bot")
+   Put YT_COOKIES_B64 sa Render env if needed
+=========================== */
+let COOKIE_FILE = null;
+
+if (process.env.YT_COOKIES_B64) {
+  const cookiePath = "/tmp/cookies.txt";
+  fs.writeFileSync(cookiePath, Buffer.from(process.env.YT_COOKIES_B64, "base64"));
+  COOKIE_FILE = cookiePath;
+  console.log("✅ Cookies loaded!");
+}
+
+/* ===========================
+   ✅ CORS FIX (Netlify + Local)
+=========================== */
+const allowedOrigins = [
+  "https://youtube-downloader-by-rlb.netlify.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
+
 const corsOptions = {
-  origin: "https://youtube-downloader-by-rlb.netlify.app",
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // allow curl/postman/mobile
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Not allowed by CORS: " + origin));
+  },
   methods: ["GET", "OPTIONS"],
   allowedHeaders: ["Content-Type"],
 };
@@ -44,10 +70,16 @@ app.get("/download/:type", async (req, res) => {
   try {
     const extension = type === "mp3" ? "mp3" : "mp4";
 
-    const info = await ytdlp(url, { dumpSingleJson: true, noPlaylist: true });
+    // ✅ Get info (with cookies if available)
+    const info = await ytdlp(url, {
+      dumpSingleJson: true,
+      noPlaylist: true,
+      cookies: COOKIE_FILE || undefined,
+    });
 
     const rawTitle = (info?.title || "video").toString();
-    const safeTitle = rawTitle.replace(/[^a-zA-Z0-9_\- ]/g, "").trim() || "video";
+    const safeTitle =
+      rawTitle.replace(/[^a-zA-Z0-9_\- ]/g, "").trim() || "video";
 
     const filename = `${safeTitle}_${Date.now()}.${extension}`;
     const filepath = path.join(DOWNLOAD_DIR, filename);
@@ -55,6 +87,7 @@ app.get("/download/:type", async (req, res) => {
     const options = {
       output: filepath,
       noPlaylist: true,
+      cookies: COOKIE_FILE || undefined,
     };
 
     if (type === "mp3") {
@@ -75,13 +108,16 @@ app.get("/download/:type", async (req, res) => {
         console.error("❌ res.download error:", err);
       }
     });
-
   } catch (err) {
     console.error("❌ Download error:", err);
-    return res.status(500).send("❌ Failed to download.");
+
+    // ✅ return real error details (para makita mo sa frontend)
+    return res.status(500).json({
+      message: "❌ Failed to download.",
+      details: err?.stderr || err?.message || String(err),
+    });
   }
 });
-
 
 // ✅ important for Docker/Render
 app.listen(PORT, "0.0.0.0", () => {
