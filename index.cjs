@@ -12,7 +12,14 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR);
 }
 
-app.use(cors());
+// ✅ CORS FIX
+app.use(cors({
+  origin: "https://youtube-downloader-by-rlb.netlify.app",
+  methods: ["GET", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+}));
+app.options("*", cors());
+
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -27,37 +34,37 @@ app.get("/download/:type", async (req, res) => {
     return res.status(400).send("❌ Invalid request.");
   }
 
-  const extension = type === "mp3" ? "mp3" : "mp4";
-  const info = await ytdlp(url, { dumpSingleJson: true });
-  const safeTitle = info.title.replace(/[^a-zA-Z0-9_\- ]/g, '').trim();
-  const filename = `${safeTitle || "video"}.${extension}`;
-  const filepath = path.join(DOWNLOAD_DIR, filename);
-
   try {
-    // ✅ FIXED: use clean options depending on type
-    const options = {
-      output: filepath,
-    };
+    const extension = type === "mp3" ? "mp3" : "mp4";
+
+    const info = await ytdlp(url, { dumpSingleJson: true });
+    const safeTitle = info.title.replace(/[^a-zA-Z0-9_\- ]/g, "").trim();
+    const filename = `${safeTitle || "video"}.${extension}`;
+    const filepath = path.join(DOWNLOAD_DIR, filename);
+
+    const options = { output: filepath };
 
     if (type === "mp3") {
       options.extractAudio = true;
       options.audioFormat = "mp3";
       options.format = "bestaudio";
-    }
-
-    if (type === "mp4") {
+    } else {
       options.format = "mp4";
     }
 
     await ytdlp(url, options);
 
-    res.setHeader("Content-Type", type === "mp3" ? "audio/mpeg" : "video/mp4");
+    res.setHeader(
+      "Content-Type",
+      type === "mp3" ? "audio/mpeg" : "video/mp4"
+    );
+
     res.download(filepath, () => {
-      fs.unlinkSync(filepath); // Delete after sending
+      fs.existsSync(filepath) && fs.unlinkSync(filepath);
     });
 
   } catch (err) {
-    console.error("❌ Download error:", err.message);
+    console.error("❌ Download error:", err);
     res.status(500).send("❌ Failed to download.");
   }
 });
