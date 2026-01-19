@@ -2,25 +2,32 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const ytdlp = require("youtube-dl-exec");
+
+// ✅ IMPORTANT: use system installed yt-dlp
+const { create: createYoutubeDl } = require("youtube-dl-exec");
+const ytdlp = createYoutubeDl("/usr/local/bin/yt-dlp");
 
 const app = express();
-const PORT = process.env.PORT || 4000;
-const DOWNLOAD_DIR = path.resolve(__dirname, "downloads");
+
+// ✅ Render-friendly default port
+const PORT = process.env.PORT || 8080;
+
+// ✅ safer temp directory sa cloud (ephemeral)
+const DOWNLOAD_DIR = "/tmp/downloads";
 
 if (!fs.existsSync(DOWNLOAD_DIR)) {
-  fs.mkdirSync(DOWNLOAD_DIR);
+  fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
 // ✅ CORS FIX
-app.use(cors({
+const corsOptions = {
   origin: "https://youtube-downloader-by-rlb.netlify.app",
   methods: ["GET", "OPTIONS"],
   allowedHeaders: ["Content-Type"],
-}));
-app.options("*", cors());
+};
 
-app.use(express.json());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 app.get("/", (req, res) => {
   res.send("✅ YouTube Downloader API is running.");
@@ -37,38 +44,46 @@ app.get("/download/:type", async (req, res) => {
   try {
     const extension = type === "mp3" ? "mp3" : "mp4";
 
-    const info = await ytdlp(url, { dumpSingleJson: true });
-    const safeTitle = info.title.replace(/[^a-zA-Z0-9_\- ]/g, "").trim();
-    const filename = `${safeTitle || "video"}.${extension}`;
+    const info = await ytdlp(url, { dumpSingleJson: true, noPlaylist: true });
+
+    const rawTitle = (info?.title || "video").toString();
+    const safeTitle = rawTitle.replace(/[^a-zA-Z0-9_\- ]/g, "").trim() || "video";
+
+    const filename = `${safeTitle}_${Date.now()}.${extension}`;
     const filepath = path.join(DOWNLOAD_DIR, filename);
 
-    const options = { output: filepath };
+    const options = {
+      output: filepath,
+      noPlaylist: true,
+    };
 
     if (type === "mp3") {
       options.extractAudio = true;
       options.audioFormat = "mp3";
-      options.format = "bestaudio";
+      options.format = "bestaudio/best";
     } else {
-      options.format = "mp4";
+      options.format = "best[ext=mp4]/best";
     }
 
     await ytdlp(url, options);
 
-    res.setHeader(
-      "Content-Type",
-      type === "mp3" ? "audio/mpeg" : "video/mp4"
-    );
+    // ✅ Send file then delete
+    return res.download(filepath, filename, (err) => {
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
 
-    res.download(filepath, () => {
-      fs.existsSync(filepath) && fs.unlinkSync(filepath);
+      if (err) {
+        console.error("❌ res.download error:", err);
+      }
     });
 
   } catch (err) {
     console.error("❌ Download error:", err);
-    res.status(500).send("❌ Failed to download.");
+    return res.status(500).send("❌ Failed to download.");
   }
 });
 
-app.listen(PORT, () => {
+
+// ✅ important for Docker/Render
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
