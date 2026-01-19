@@ -1,5 +1,5 @@
 # Base image with Node.js
-FROM node:18-bullseye
+FROM node:18-bookworm
 
 # Install Python, ffmpeg, and yt-dlp
 RUN apt-get update && \
