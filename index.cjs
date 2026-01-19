@@ -19,34 +19,22 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-/* ===========================
-   ✅ OPTIONAL COOKIES FIX
-   (for "Sign in to confirm you're not a bot")
-   Put YT_COOKIES_B64 sa Render env if needed
-=========================== */
-let COOKIE_FILE = null;
-
-if (process.env.YT_COOKIES_B64) {
-  const cookiePath = "/tmp/cookies.txt";
-  fs.writeFileSync(cookiePath, Buffer.from(process.env.YT_COOKIES_B64, "base64"));
-  COOKIE_FILE = cookiePath;
-  console.log("✅ Cookies loaded!");
-}
-
-/* ===========================
-   ✅ CORS FIX (Netlify + Local)
-=========================== */
-const allowedOrigins = [
+// ✅ CORS FIX (allow Netlify + Localhost)
+const ALLOWED_ORIGINS = [
   "https://youtube-downloader-by-rlb.netlify.app",
   "http://localhost:3000",
-  "http://127.0.0.1:3000",
 ];
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // allow curl/postman/mobile
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("Not allowed by CORS: " + origin));
+  origin: function (origin, callback) {
+    // allow requests with no origin (Postman/server-side)
+    if (!origin) return callback(null, true);
+
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS blocked: " + origin));
   },
   methods: ["GET", "OPTIONS"],
   allowedHeaders: ["Content-Type"],
@@ -70,11 +58,16 @@ app.get("/download/:type", async (req, res) => {
   try {
     const extension = type === "mp3" ? "mp3" : "mp4";
 
-    // ✅ Get info (with cookies if available)
+    // ✅ Enable JS runtime (removes warning)
+    const commonOptions = {
+      noPlaylist: true,
+      jsRuntimes: "node:/usr/local/bin/node",
+      ffmpegLocation: "/usr/bin/ffmpeg",
+    };
+
     const info = await ytdlp(url, {
       dumpSingleJson: true,
-      noPlaylist: true,
-      cookies: COOKIE_FILE || undefined,
+      ...commonOptions,
     });
 
     const rawTitle = (info?.title || "video").toString();
@@ -86,8 +79,7 @@ app.get("/download/:type", async (req, res) => {
 
     const options = {
       output: filepath,
-      noPlaylist: true,
-      cookies: COOKIE_FILE || undefined,
+      ...commonOptions,
     };
 
     if (type === "mp3") {
@@ -111,11 +103,16 @@ app.get("/download/:type", async (req, res) => {
   } catch (err) {
     console.error("❌ Download error:", err);
 
-    // ✅ return real error details (para makita mo sa frontend)
-    return res.status(500).json({
-      message: "❌ Failed to download.",
-      details: err?.stderr || err?.message || String(err),
-    });
+    // ✅ clearer message if YouTube blocks cloud server
+    const msg = String(err?.stderr || err?.message || err);
+
+    if (msg.includes("Sign in to confirm you’re not a bot")) {
+      return res
+        .status(403)
+        .send("❌ YouTube blocked this server (bot verification). Try another video.");
+    }
+
+    return res.status(500).send("❌ Failed to download.");
   }
 });
 
